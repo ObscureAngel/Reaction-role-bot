@@ -11,7 +11,7 @@ var lo_fs = require('fs'),
     ls_filePath = lo_path.join(__dirname, 'token.txt');
 
 // Buffer mydata
-//var BUFFER = bufferFile('token.txt');
+_BUFFER = bufferFile('token.txt');
 
 function bufferFile(relPath) {
     ls_token = lo_fs.readFileSync(ls_filePath,{ encoding: 'utf8' }); // zzzz....
@@ -45,8 +45,15 @@ lo_bot.on('error', po_error => {
     console.error(new Date() + ' : ' + po_error.message);
 });
 
+lo_bot.login(ls_token);
+
 lo_bot.on('message', msg => {
 
+
+});
+
+lo_bot.on('messageReactionAdd', (po_messageReaction, po_user) => {
+    if (po_messageReaction.message.channel.name != 'reaction-role') return;
 
 });
 
@@ -56,9 +63,54 @@ const la_events = {
 	MESSAGE_REACTION_REMOVE: 'messageReactionRemove',
 };
 
-lo_bot.on('messageReactionAdd', (po_messageReaction, po_user) => {
-    if (po_messageReaction.message.channel.name != 'reaction-role') return;
+lo_bot.on('raw', async event => {
+    if (!la_events.hasOwnProperty(event.t)) return;
 
+    const { d: data } = event;
+    const user = lo_bot.users.get(data.user_id);
+    const channel = lo_bot.channels.get(data.channel_id);
+
+    const message = await channel.fetchMessage(data.message_id);
+    const member = message.guild.members.get(user.id);
+
+    const emojiKey = (data.emoji.id) ? `${data.emoji.name}:${data.emoji.id}` : data.emoji.name;
+    let reaction = message.reactions.get(emojiKey);
+
+    if (!reaction) {
+        // Create an object that can be passed through the event like normal
+        const emoji = new Emoji(lo_bot.guilds.get(data.guild_id), data.emoji);
+        reaction = new MessageReaction(message, emoji, 1, data.user_id === lo_bot.user.id);
+    }
+
+    let embedFooterText;
+    if (message.embeds[0]) embedFooterText = message.embeds[0].footer.text;
+
+    if (
+        (message.author.id === lo_bot.user.id) && (message.content !== CONFIG.initialMessage ||
+        (message.embeds[0] && (embedFooterText !== CONFIG.embedFooter)))
+    ) {
+
+        if (!CONFIG.embed && (message.embeds.length < 1)) {
+            const re = `\\*\\*"(.+)?(?="\\*\\*)`;
+            const role = message.content.match(re)[1];
+
+            if (member.id !== lo_bot.user.id) {
+                const guildRole = message.guild.roles.find(r => r.name === role);
+                if (event.t === "MESSAGE_REACTION_ADD") member.addRole(guildRole.id);
+                else if (event.t === "MESSAGE_REACTION_REMOVE") member.removeRole(guildRole.id);
+            }
+        } else if (CONFIG.embed && (message.embeds.length >= 1)) {
+            const fields = message.embeds[0].fields;
+
+            for (const { name, value } of fields) {
+                if (member.id !== lo_bot.user.id) {
+                    const guildRole = message.guild.roles.find(r => r.name === value);
+                    if ((name === reaction.emoji.name) || (name === reaction.emoji.toString())) {
+                        if (event.t === "MESSAGE_REACTION_ADD") member.addRole(guildRole.id);
+                        else if (event.t === "MESSAGE_REACTION_REMOVE") member.removeRole(guildRole.id);
+                    }
+                }
+            }
+        }
+    }
 });
-
-lo_bot.login(ls_token);
